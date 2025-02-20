@@ -3,8 +3,9 @@ import requests
 import googlemaps
 import polyline
 from haversine import haversine, Unit
-key = '????'
+key = 'insert key here'
 
+#project created to learn usage of google maps API's, including directions, distancematrix, geocoding, and places.
 
 # uses the google geodata api to convert address to Latitude and Longitude
 def AddresstoLocation(address):
@@ -25,7 +26,7 @@ def AddresstoLocation(address):
         return lat, lot
 
     else:
-        print("Shit don't work slime :(\n")
+        print("Failed :(\n")
         return 0
 
 
@@ -120,7 +121,7 @@ def Directions(start, destination):
         directionsteps.append(currentstep)
 
     return directionsteps, coords, distancepoints
-#helper function to find index of lcosest number in list
+#helper function to find index of clcsest number in list
 def findcloseindex(list, num):
     closest_index = 0
     closest_diff = abs(list[0] -num)
@@ -133,9 +134,11 @@ def findcloseindex(list, num):
     return closest_index
 
 
-
+# takes a startpoint, end point, mileage range, and buffer zone and returns
+# directions with recommended points in the trip to stop for gas, as well as
+# gas stations near that point
 def FindGasStations(Start, End, range, buffer):
-    base_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+    base_url = 'https://places.googleapis.com/v1/places:searchNearby'
     TotalDistance = TravelDistance(Start, End)
     TotalDistNum = TotalDistance[0]
     TotalDistNum = int(TotalDistNum.replace(" mi", "").replace(",",""))
@@ -145,37 +148,107 @@ def FindGasStations(Start, End, range, buffer):
     # miles there should be a stop for a gas.
 
     # do a places search for gas stations near each one.
-    #takes into account buffer to find when you should stop for gas
+    #takes into account buffer to find when you should stop for gas, IE how much gas you should have left at that point.
     #totoldistance by range to get the number of stops
     travelrange = (range - buffer)
     stopmilepoints = []
+    print(TotalDistNum/travelrange)
     numofstops = int(TotalDistNum/travelrange)
-
+    print(numofstops)
 
     i = 1
-    while i <numofstops:
+    #determining what mile markers you should stop for gas
+    while i <=numofstops:
         stopmilepoints.append(travelrange*i)
         i=i+1
 
-    print(stopmilepoints)
+
     stopindexes=[]
+    #finds the index of the distance checkpoint closest to the stop
     for s in stopmilepoints:
         index = findcloseindex(distancecheckpoints,s)
         stopindexes.append(index)
-    print(stopindexes)
+
     stopcoordinates = []
+    #uses this index to pull the closest point on the travel path to
+    #the suggested path, this will be used to find nearby gas stations.
     for i in stopindexes:
         stopcoord = coords[i]
         stopcoordinates.append(stopcoord)
-    print(stopcoordinates)
+
+    #finds nearby gas stations within a 5 mile radius of each stopping point
+    datas = []
+    for s in stopcoordinates:
+        latitude = s[0]
+        longitude = s[1]
+        #preparing the POST request for the places api
+        headers = {
+            'Content_type': 'application/json; charset=utf-8',
+            'X-Goog-Api-Key':key,
+            'X-Goog-FieldMask': 'places.displayName,places.id,places.types,places.formattedAddress,places.priceLevel,places.userRatingCount,places.rating'
+        }
+        data = {
+
+            'includedTypes':["gas_station"],
+            "maxResultCount" : 10,
+            "locationRestriction": {
+                "circle": {
+                    "center": {
+                        "latitude": latitude,
+                        "longitude": longitude,
+                    },
+                    #roughly 5 miles
+                    "radius": 32000.0
+                }
+
+            }
+
+        }
+
+        response = requests.post(base_url, headers = headers, json = data)
+        if response.status_code == 200:
+            data = response.json()
+            datas.append(data)
+        else:
+            print(f'Error: {response.status_code} - {response.text}')
+    Gstations = []
+    for d in datas:
+        addresses = []
+        for p in d["places"]:
+            disp = p["displayName"]
+            disptext = disp["text"]
+            add = p["formattedAddress"]
+
+            addresses.append(disptext + ", " + add)
+        Gstations.append(addresses)
+
+    return Directionss, stopcoordinates, stopmilepoints, Gstations
 
 
+        
 if __name__ == '__main__':
-    address1 = "9211  Springbreeze court, Fort Wayne Indiana"
-    address2 = "53 Wolfs Head Drive, Coaldale Colarado"
-    latlong = AddresstoLocation(address2)
-    Directions(address1, address2)
-    FindGasStations(address1, address2, 200, 40)
+    address1 = "Fort Wayne, Indiana"
+    address2 = "Colorado Springs, Colorado"
+    #find directions between address1 and addrees 2 with a mileage of 200 miles and a buffer zone of 40 miles
+    Steps, stopcoords, milemarks,gasstations = FindGasStations(address1, address2, 200, 40)
+    #prints directions
+    for s in Steps:
+        print(s)
+        print('\n')
+
+    print(len(milemarks))
+    print(len(gasstations))
+    j=0
+    #shows suggested mile markers for stopping for gas and returns gas stations within a 20 miles radius of the suggested point
+    while j< len(milemarks):
+        print("stop for gas at " + str(milemarks[j]) +" Miles")
+        print("nearby gas stations:")
+        print(gasstations[j])
+        print("\n")
+
+        j = j+1
+
+
 
 
 
